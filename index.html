@@ -18,7 +18,7 @@ h1{font-size:16px;margin:0 0 8px;display:flex;justify-content:space-between;alig
 .bar label{font-size:12px;color:var(--mute)}
 input,button,select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);min-width:0}
 button{cursor:pointer}button.on{background:var(--gold);color:#111;border-color:var(--gold)}
-#sym{width:90px}#tick,#ratio,#bigk,#bigv{width:62px}
+#sym{width:90px}#tick,#ratio,#bigk,#bigv,#bsz{width:62px}
 details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
 details input{width:100%;margin-top:6px}
 #info{padding:6px 10px;font-size:12.5px;color:var(--mute);border-bottom:1px solid var(--line);min-height:30px}
@@ -43,6 +43,8 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
       <label><input type="checkbox" id="big" checked style="padding:0"> Big trade</label>
       <label>×TB <input id="bigk" type="number" step="0.5" min="1.5"></label>
       <label>Vol ≥ <input id="bigv" type="number" step="1" min="1"></label>
+      <label>Kiểu <select id="view"><option value="auto">Tự động</option><option value="fp">Footprint</option><option value="bub">Bubble</option></select></label>
+      <label>Cỡ bóng <input id="bsz" type="number" step="2" min="8" max="80"></label>
       <label>Tải <select id="hrs"><option value="4">4 giờ</option><option value="8">8 giờ</option><option value="24">24 giờ</option><option value="48">48 giờ</option></select></label>
       <button id="zo" aria-label="Thu nhỏ">&minus;</button><button id="zi" aria-label="Phóng to">+</button><button id="live" class="on">Live</button>
     </div>
@@ -54,7 +56,7 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div id="info"></div><div id="cv"><canvas id="c"></canvas></div>
-    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Bong bóng = Big trade: mức giá có volume mua (cyan, nửa phải) hoặc bán (đỏ, nửa trái) nhô cao bất thường rồi giảm dần ở các mức kề. Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
+    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Bong bóng = Big trade: mức giá có volume mua (xanh lá) hoặc bán (tím) nhô cao bất thường rồi giảm dần ở các mức kề, bóng càng to volume càng lớn. Zoom ra thì tự chuyển sang kiểu Bubble (nến + bóng), zoom vào thì hiện lại các ô Bán | Mua; có thể ép kiểu ở ô "Kiểu". Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
     Lưu ý: XAUUSD CFD không có giao dịch thật, mua/bán được suy ra từ tick (tick-rule) nên đây là dữ liệu ước lượng, không phải orderflow thật như Binance/CME.</div>
   </div>
 </div>
@@ -62,13 +64,14 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
 const $=id=>document.getElementById(id);
 const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||"{}")}catch(e){return{}}};
 let cfg=rd("sb_cfg"),P=rd("fp_prefs");               // sb_cfg dùng chung với trang TPO / Signal Bridge nếu cùng domain
-let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,bigK=P.bigK||3,bigV=P.bigV||15;
+let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,bigK=P.bigK||3,bigV=P.bigV||15,viewMode=P.view||"auto",bsz=P.bsz||26,bigRef=1;
+const BUY="38,200,130",SELL="186,50,196",CU="#1fc21f",CD="#5b2f91",CDL="#9162d6",TB="#63f0a8",TS="#e58cf2";
 const m1=new Map(),fpm=new Map();                     // phút -> nến M1 [t,o,h,l,c,v] ; phút -> [[giá,mua,bán],...]
 let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr="",qInfo={},follow=true,loadingOld=false,noMore=false,gen=0;
 let cw=96,rh=15,sx=0,cp=null,ch=null;
 const AX=62,BH=62,MX=40,MONO="Consolas,ui-monospace,Menlo,monospace";
 const cv=$("c"),ctx=cv.getContext("2d");let W=0,H=0;
-const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bigK,bigV}))}catch(e){}};
+const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bigK,bigV,view:viewMode,bsz}))}catch(e){}};
 const dec=()=>Number.isInteger(tick)?0:Math.min(4,(String(tick).split(".")[1]||"").length);
 const fx=(v,d=2)=>v==null?"–":Number(v).toFixed(d);
 const fv=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e4?(v/1e3).toFixed(1)+"K":Math.round(v)+"";
@@ -224,6 +227,8 @@ function build(){
     for(const [q,e] of c.lv){lo=Math.min(lo,q);hi=Math.max(hi,q);const s=e[0]+e[1];if(s>mx)mx=s;if(s>pm){pm=s;poc=q}}
     c.lo=lo;c.hi=hi;c.mx=mx;c.poc=poc;c.delta=c.buy-c.sell;c.big=findBig(c);
   }
+  const all=[];for(const c of cands)for(const g of c.big)all.push(g.v);
+  all.sort((a,b)=>a-b);bigRef=all.length?Math.max(1,all[Math.floor(all.length*.9)]):1;   // bóng có volume ~ phân vị 90 sẽ to cỡ "Cỡ bóng"
   cver=ver;
 }
 
@@ -246,55 +251,70 @@ function draw(){
   if(sx<PW*.3&&!noMore&&!loadingOld)loadOlder();
   const Y=p=>PH/2-(p-cp)/tick*rh;
   // lưới giá
-  let step=1;const need=Math.ceil(30/rh);for(const s of [1,2,5,10,20,50,100,200,500]){step=s;if(s>=need)break}
+  let step=1;const need=Math.ceil(30/rh);for(const s of [1,2,5,10,20,50,100,200,500,1000,2000,5000]){step=s;if(s>=need)break}
   const rTop=Math.floor(cp/tick+PH/2/rh)+1,rBot=Math.floor(cp/tick-PH/2/rh)-1;
   ctx.font="11px system-ui";ctx.textAlign="left";
   for(let r=Math.ceil(rBot/step)*step;r<=rTop;r+=step){
     const y=Y(r*tick);ctx.strokeStyle="#22222e";ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(PW,y);ctx.stroke();
     ctx.fillStyle="#8a8aa0";ctx.fillText(fx(r*tick,dc),PW+4,y);
   }
-  const txt=rh>=9&&cw>=58,fs=Math.min(rh-2,11.5),bw=Math.max(3,Math.min(8,cw*.1));
-  let focus=null;const mid=sx+PW/2,hoverX=ch?sx+ch[0]:null;
+  // Kiểu hiển thị: footprint (zoom vào, có ô Bán | Mua) hoặc bubble (zoom ra, nến + bóng bao trùm)
+  const mode=viewMode==="fp"?1:viewMode==="bub"?0:(cw>=58&&rh>=9?1:0);
+  const txt=mode&&rh>=9&&cw>=58,fs=Math.min(rh-2,11.5),bw=Math.max(3,Math.min(8,cw*.1));
+  let focus=null;const mid=sx+PW/2,hoverX=ch?sx+ch[0]:null,vis=[];
   ctx.save();ctx.beginPath();ctx.rect(0,0,PW,PH);ctx.clip();
   cands.forEach((c,i)=>{
     const x0=i*cw-sx;
     if(hoverX!=null?(hoverX>=i*cw&&hoverX<(i+1)*cw):(mid>=i*cw&&mid<(i+1)*cw))focus=c;
     if(x0+cw<0||x0>PW)return;
-    // thân nến mảnh bên trái
-    const up=c.c>=c.o,col=up?"#00ffd7":"#ff4c4c",cx=x0+2+bw/2;
-    ctx.strokeStyle=col;ctx.beginPath();ctx.moveTo(cx,Y(c.h));ctx.lineTo(cx,Y(c.l));ctx.stroke();
-    ctx.fillStyle=col;const yo=Y(c.o),yc=Y(c.c);ctx.fillRect(x0+2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yo-yc)));
-    // ô footprint
-    const xc=x0+bw+5,cwid=cw-bw-9,hw=cwid/2;
-    for(let q=c.lo;q<=c.hi;q++){
-      const y=Y(q*tick);if(y<-rh||y>PH+rh)continue;
-      const e=c.lv.get(q);
-      if(!e){
-        if(c.buy+c.sell>0){ctx.fillStyle="rgba(255,255,255,.035)";ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
-          if(txt){ctx.fillStyle="#4a4a5e";ctx.font=fs+"px "+MONO;ctx.textAlign="center";ctx.fillText("–",xc+hw,y+1)}}
-        continue;
+    const up=c.c>=c.o,yo=Y(c.o),yc=Y(c.c);
+    let xc,cwid;
+    if(mode){
+      const cx=x0+2+bw/2;
+      ctx.strokeStyle=up?CU:CDL;ctx.beginPath();ctx.moveTo(cx,Y(c.h));ctx.lineTo(cx,Y(c.l));ctx.stroke();
+      ctx.fillStyle=up?CU:CD;ctx.fillRect(x0+2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yo-yc)));
+      xc=x0+bw+5;cwid=cw-bw-9;const hw=cwid/2;
+      for(let q=c.lo;q<=c.hi;q++){
+        const y=Y(q*tick);if(y<-rh||y>PH+rh)continue;
+        const e=c.lv.get(q);
+        if(!e){
+          if(c.buy+c.sell>0){ctx.fillStyle="rgba(255,255,255,.035)";ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
+            if(txt){ctx.fillStyle="#4a4a5e";ctx.font=fs+"px "+MONO;ctx.textAlign="center";ctx.fillText("–",xc+hw,y+1)}}
+          continue;
+        }
+        const s=e[0],b=e[1],t=s+b,a=.1+.5*t/c.mx;
+        ctx.fillStyle=b>=s?`rgba(${BUY},${a*.55})`:`rgba(${SELL},${a*.55})`;
+        ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
+        if(q===c.poc){ctx.strokeStyle="#ffd700";ctx.lineWidth=1.2;ctx.strokeRect(xc+.5,y-rh/2+.5,cwid-1,Math.max(1,rh-1));ctx.lineWidth=1}
+        if(!txt)continue;
+        const dn=c.lv.get(q-1),up_=c.lv.get(q+1);
+        const bi=b>0&&b>=ratio*Math.max(dn?dn[0]:0,1),si=s>0&&s>=ratio*Math.max(up_?up_[1]:0,1);
+        ctx.font=fs+"px "+MONO;
+        ctx.textAlign="right";ctx.fillStyle=si?TS:"#b4b4c4";if(si)ctx.font="bold "+fs+"px "+MONO;
+        ctx.fillText(s>0?fv(s):"",xc+hw-3,y+1);
+        ctx.font=fs+"px "+MONO;ctx.textAlign="left";ctx.fillStyle=bi?TB:"#b4b4c4";if(bi)ctx.font="bold "+fs+"px "+MONO;
+        ctx.fillText(b>0?fv(b):"",xc+hw+3,y+1);
       }
-      const s=e[0],b=e[1],t=s+b,a=.1+.5*t/c.mx;
-      ctx.fillStyle=b>=s?`rgba(0,255,215,${a*.55})`:`rgba(255,76,76,${a*.55})`;
-      ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
-      if(q===c.poc){ctx.strokeStyle="#ffd700";ctx.lineWidth=1.2;ctx.strokeRect(xc+.5,y-rh/2+.5,cwid-1,Math.max(1,rh-1));ctx.lineWidth=1}
-      if(!txt)continue;
-      const dn=c.lv.get(q-1),up_=c.lv.get(q+1);
-      const bi=b>0&&b>=ratio*Math.max(dn?dn[0]:0,1),si=s>0&&s>=ratio*Math.max(up_?up_[1]:0,1);
-      ctx.font=fs+"px "+MONO;
-      ctx.textAlign="right";ctx.fillStyle=si?"#ff6b6b":"#b4b4c4";if(si)ctx.font="bold "+fs+"px "+MONO;
-      ctx.fillText(s>0?fv(s):"",xc+hw-3,y+1);
-      ctx.font=fs+"px "+MONO;ctx.textAlign="left";ctx.fillStyle=bi?"#2effe0":"#b4b4c4";if(bi)ctx.font="bold "+fs+"px "+MONO;
-      ctx.fillText(b>0?fv(b):"",xc+hw+3,y+1);
+    }else{
+      const cxm=x0+cw/2,bwid=Math.max(2,Math.min(16,cw*.55)),yt=Math.min(yo,yc),bh=Math.max(1,Math.abs(yo-yc));
+      ctx.strokeStyle=up?CU:CDL;ctx.beginPath();ctx.moveTo(cxm,Y(c.h));ctx.lineTo(cxm,Y(c.l));ctx.stroke();
+      ctx.fillStyle=up?CU:CD;ctx.fillRect(cxm-bwid/2,yt,bwid,bh);
+      if(!up&&bwid>=4&&bh>=3){ctx.strokeStyle=CDL;ctx.strokeRect(cxm-bwid/2+.5,yt+.5,bwid-1,bh-1)}
+      xc=x0+3;cwid=cw-6;
     }
-    if(bigOn&&c.big)for(const g of c.big){
-      const y=Y(g.q*tick);if(y<-rh*2||y>PH+rh*2)continue;
-      const bx=xc+(g.side>0?hw*1.5:hw*.5),r=Math.max(3,Math.min(rh*1.6,hw*.5,4+3*Math.sqrt(g.v/g.thr))),col=g.side>0?"0,255,215":"255,76,76";
-      ctx.fillStyle=`rgba(${col},.35)`;ctx.strokeStyle=`rgb(${col})`;ctx.lineWidth=1.5;
-      ctx.beginPath();ctx.arc(bx,y,r,0,7);ctx.fill();ctx.stroke();ctx.lineWidth=1;
-      if(r>=8){ctx.fillStyle="#fff";ctx.font="bold "+Math.min(10,r*.9)+"px "+MONO;ctx.textAlign="center";ctx.fillText(fv(g.v),bx,y+1)}
-    }
+    if(bigOn&&c.big)for(const g of c.big)vis.push({g,x:xc+cwid/2,w:cwid});
   });
+  // Bong bóng Big trade: cỡ theo volume (diện tích ~ volume), bóng to vẽ trước để bóng nhỏ không bị che
+  vis.sort((a,b)=>b.g.v-a.g.v);
+  for(const o of vis){
+    const g=o.g,y=Y(g.q*tick);if(y<-100||y>PH+100)continue;
+    let r=Math.max(4,Math.min(bsz*1.5,bsz*.85*Math.sqrt(g.v/bigRef)));
+    if(mode)r=Math.min(r,Math.max(o.w*.55,rh*1.5));      // footprint: bóng phủ trọn ô Bán | Mua nhưng không tràn sang nến bên cạnh
+    const col=g.side>0?BUY:SELL;
+    ctx.fillStyle=`rgba(${col},${mode?.3:.55})`;ctx.strokeStyle=`rgba(${col},.9)`;ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(o.x,y,r,0,7);ctx.fill();ctx.stroke();
+    if(r>=(mode?11:15)){ctx.fillStyle="#fff";ctx.font="bold "+Math.min(11,r*.6)+"px "+MONO;ctx.textAlign="center";ctx.fillText(fv(g.v),o.x,y+1)}
+  }
   const px=lastPx||last.c,py=Y(px);
   ctx.strokeStyle="#ffd700";ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(PW,py);ctx.stroke();ctx.setLineDash([]);
   ctx.restore();
@@ -304,12 +324,17 @@ function draw(){
   ctx.strokeStyle="#2a2a3a";ctx.beginPath();ctx.moveTo(0,PH+.5);ctx.lineTo(W,PH+.5);ctx.stroke();
   ctx.fillStyle="#8a8aa0";ctx.fillText("Delta",PW+4,PH+14);ctx.fillText("Vol",PW+4,PH+32);ctx.fillText("Giờ",PW+4,PH+50);
   ctx.font="11px "+MONO;ctx.textAlign="center";
+  const stride=Math.max(1,Math.ceil(56/cw)),showNum=cw>=34;
   cands.forEach((c,i)=>{
     const x0=i*cw-sx;if(x0+cw<0||x0>PW)return;const xm=x0+cw/2;
-    ctx.fillStyle=c.delta>=0?"#00ffd7":"#ff4c4c";ctx.fillText((c.delta>0?"+":"")+fv(c.delta),xm,PH+14);
-    ctx.fillStyle="#b4b4c4";ctx.fillText(fv(c.buy+c.sell),xm,PH+32);
-    const d=new Date(c.t*1000),lab=hm(c.t);
-    ctx.fillStyle="#8a8aa0";ctx.fillText(cw>=70||i%2===0?(d.getUTCHours()===0&&d.getUTCMinutes()===0?d.toISOString().slice(5,10)+" ":"")+lab:"",xm,PH+50);
+    if(showNum){
+      ctx.fillStyle=c.delta>=0?TB:TS;ctx.fillText((c.delta>0?"+":"")+fv(c.delta),xm,PH+14);
+      ctx.fillStyle="#b4b4c4";ctx.fillText(fv(c.buy+c.sell),xm,PH+32);
+    }
+    if(i%stride===0){
+      const d=new Date(c.t*1000),pv=new Date(cands[Math.max(0,i-stride)].t*1000),nd=i===0||d.getUTCDate()!==pv.getUTCDate();
+      ctx.fillStyle="#8a8aa0";ctx.fillText((nd?d.toISOString().slice(5,10)+" ":"")+hm(c.t),xm,PH+50);
+    }
   });
   if(ch&&ch[0]<PW&&ch[1]<PH){
     const [cx,cy]=ch;ctx.save();ctx.strokeStyle="rgba(255,255,255,.4)";ctx.setLineDash([3,3]);ctx.beginPath();
@@ -326,7 +351,7 @@ new ResizeObserver(size).observe($("cv"));
 
 // ---------- kéo / zoom ----------
 function zoomAt(cx,cy,f){
-  const ncw=Math.max(14,Math.min(300,cw*f)),nrh=Math.max(3,Math.min(40,rh*f)),PH=H-BH;
+  const ncw=Math.max(3,Math.min(300,cw*f)),nrh=Math.max(.3,Math.min(40,rh*f)),PH=H-BH;
   sx=(sx+cx)/cw*ncw-cx;const p=cp+(PH/2-cy)/rh*tick;cp=p-(PH/2-cy)/nrh*tick;cw=ncw;rh=nrh;redraw();
 }
 const ptr=new Map(),pdist=()=>{const a=[...ptr.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
@@ -339,8 +364,8 @@ cv.onpointermove=e=>{
   const n=[e.offsetX,e.offsetY];ptr.set(e.pointerId,n);
   if(ptr.size===1){
     const dx=n[0]-o[0],dy=n[1]-o[1];
-    if(mode==="y")rh=Math.max(3,Math.min(40,rh*Math.exp(-dy/200)));
-    else if(mode==="x"){const c=Math.max(14,Math.min(300,cw*Math.exp(dx/300)));sx=(sx+(W-AX)/2)/cw*c-(W-AX)/2;cw=c}
+    if(mode==="y")rh=Math.max(.3,Math.min(40,rh*Math.exp(-dy/200)));
+    else if(mode==="x"){const c=Math.max(3,Math.min(300,cw*Math.exp(dx/300)));sx=(sx+(W-AX)/2)/cw*c-(W-AX)/2;cw=c}
     else{if(dx){unfollow();sx-=dx}cp+=dy/rh*tick}
     redraw();
   }else if(ptr.size===2){const d=pdist(),a=[...ptr.values()];zoomAt((a[0][0]+a[1][0])/2,(a[0][1]+a[1][1])/2,d/pd);pd=d}
@@ -368,6 +393,9 @@ $("big").checked=bigOn;$("bigk").value=bigK;$("bigv").value=bigV;
 $("big").onchange=()=>{bigOn=$("big").checked;savePrefs();ver++;redraw()};
 $("bigk").onchange=()=>{const v=Number($("bigk").value);if(v>=1.5){bigK=v;savePrefs();ver++;redraw()}};
 $("bigv").onchange=()=>{const v=Number($("bigv").value);if(v>=1){bigV=v;savePrefs();ver++;redraw()}};
+$("view").value=viewMode;$("bsz").value=bsz;
+$("view").onchange=()=>{viewMode=$("view").value;savePrefs();redraw()};
+$("bsz").onchange=()=>{const v=Number($("bsz").value);if(v>=8){bsz=v;savePrefs();redraw()}};
 $("hrs").onchange=()=>{hrs=Number($("hrs").value);savePrefs();start()};
 setInterval(tickLoop,1000);
 setInterval(()=>{if(cfg.apiUrl&&!document.hidden)loadData(Date.now()-lastFull>300000).catch(()=>{})},30000);
