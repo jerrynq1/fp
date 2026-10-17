@@ -61,7 +61,7 @@ const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||"{}")}catch(e){retur
 let cfg=rd("sb_cfg"),P=rd("fp_prefs");               // sb_cfg dùng chung với trang TPO / Signal Bridge nếu cùng domain
 let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3;
 const m1=new Map(),fpm=new Map();                     // phút -> nến M1 [t,o,h,l,c,v] ; phút -> [[giá,mua,bán],...]
-let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr="",qInfo={},follow=true;
+let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr="",qInfo={},follow=true,loadingOld=false,noMore=false,gen=0;
 let cw=96,rh=15,sx=0,cp=null,ch=null;
 const AX=62,BH=62,MX=40,MONO="Consolas,ui-monospace,Menlo,monospace";
 const cv=$("c"),ctx=cv.getContext("2d");let W=0,H=0;
@@ -79,23 +79,57 @@ async function api(p){
 }
 const qs=(since)=>`symbol=${encodeURIComponent(sym)}&since=${since}`;
 function lastT(){let m=0;for(const k of m1.keys())if(k>m)m=k;return m}
+// Tìm nến mới nhất trên API (thị trường đóng cửa/cuối tuần thì giờ hiện tại không có nến, nên phải dò lùi từng ngày)
+async function findLatest(){
+  const now=srv||Math.floor(Date.now()/1000);
+  for(let k=0;k<14;k++){
+    const hi=k?now-k*86400:now+86400,r=await api(`/api/bars?symbol=${encodeURIComponent(sym)}&since=${now-(k+1)*86400}&until=${hi}`);
+    if(r.bars.length)return r.bars[r.bars.length-1][0];
+  }
+  return 0;
+}
+const fpGet=(q)=>api("/api/fp?"+q).then(x=>{fpErr="";return x}).catch(e=>{fpErr=e.message==="HTTP 404"?"Worker chưa có /api/fp (chưa cập nhật worker.js)":e.message;return{mins:[]}});
 async function loadData(full){
-  const now=srv||Math.floor(Date.now()/1000),floor=now-hrs*3600,l=lastT();
-  const since=full||!l?floor:Math.max(floor,l-900);
-  const [b,f]=await Promise.all([
-    api("/api/bars?"+qs(since)),
-    api("/api/fp?"+qs(since)).then(x=>{fpErr="";return x}).catch(e=>{fpErr=e.message==="HTTP 404"?"Worker chưa có /api/fp (chưa cập nhật worker.js)":e.message;return{mins:[]}})
-  ]);
+  const g=gen;let since;
+  if(full||!m1.size){
+    const a=await findLatest();if(g!==gen)return;
+    if(!a){status(false,"API chưa có nến nào của "+sym);return}
+    since=a-hrs*3600;
+  }else since=lastT()-900;
+  const [b,f]=await Promise.all([api("/api/bars?"+qs(since)),fpGet(qs(since))]);
+  if(g!==gen)return;
   for(const x of b.bars)m1.set(x[0],x);
   for(const [t,r] of f.mins)fpm.set(t,r);
   if(full)lastFull=Date.now();
   ver++;report();redraw();
 }
+// Kéo sang trái hết dữ liệu thì tải thêm 12 giờ cũ hơn (bỏ qua khoảng nghỉ cuối tuần)
+async function loadOlder(){
+  if(loadingOld||noMore||!m1.size||!cfg.apiUrl)return;
+  loadingOld=true;const g=gen;
+  try{
+    let hi=Math.min(...m1.keys()),got=false;
+    for(let k=0;k<14&&!got;k++){
+      const lo=hi-12*3600,b=await api(`/api/bars?${qs(lo)}&until=${hi}`);
+      if(g!==gen)return;
+      if(b.bars.length){
+        const f=await fpGet(`${qs(lo)}&until=${hi}`);
+        if(cver!==ver)build();const n0=cands.length;
+        for(const x of b.bars)m1.set(x[0],x);
+        for(const [t,r] of f.mins)fpm.set(t,r);
+        ver++;build();sx+=(cands.length-n0)*cw;got=true;report();
+      }else hi=lo;
+    }
+    if(!got){noMore=true;status(true,"Live · hết dữ liệu cũ")}
+  }catch(e){}
+  loadingOld=false;redraw();
+}
 async function tickLoop(){
   if(!cfg.apiUrl||!cfg.token||document.hidden||busy)return;
-  busy=true;
+  busy=true;const g=gen;
   try{
     const q=await api("/api/quote");
+    if(g!==gen){busy=false;return}
     if(q.serverTime)srv=q.serverTime;
     const qq=(q.quotes||[]).find(x=>x.symbol===sym);if(qq)lastPx=Number(qq.bid);
     qInfo={age:q.receivedAt?Math.round((Date.now()-q.receivedAt)/1000):null,hasFp:q.fp!==undefined,fpNull:q.fp===null};
@@ -108,9 +142,14 @@ async function tickLoop(){
   busy=false;
 }
 async function start(){
-  m1.clear();fpm.clear();liveT=0;lastPx=null;cp=null;follow=true;ver++;$("live").classList.add("on");
+  gen++;m1.clear();fpm.clear();liveT=0;lastPx=null;cp=null;follow=true;noMore=false;loadingOld=false;ver++;$("live").classList.add("on");
   if(!cfg.apiUrl||!cfg.token){$("cfgBox").open=true;status(false,"Cần nhập API URL và token");redraw();return}
-  try{await tickLoop();await loadData(true)}catch(e){status(false,"Lỗi: "+e.message)}
+  const g=gen;
+  try{
+    while(busy)await new Promise(r=>setTimeout(r,100));   // chờ nhịp quote đang chạy dở xong rồi mới tải
+    await tickLoop();
+    if(g===gen)await loadData(true);
+  }catch(e){status(false,"Lỗi: "+e.message)}
 }
 
 // ---------- kiểm tra dữ liệu ----------
@@ -133,7 +172,11 @@ function report(){
   add("Tick của phút đang chạy",qInfo.liveN!=null?qInfo.liveN:(qInfo.fpNull?"EA gửi fp = null":qInfo.hasFp===false?"EA chưa gửi fp (chưa dùng EA mới?)":"–"),qInfo.liveN>0?"ok":"warn");
   add("Tuổi gói giá",qInfo.age!=null?qInfo.age+"s":"–",qInfo.age!=null&&qInfo.age<=5?"ok":"warn");
   if(fpErr)add("Lỗi /api/fp",fpErr,"err");
-  if(miss.length&&miss.length<=8)add("Phút thiếu fp",miss.map(hm).join(", "),"warn");
+  if(miss.length){
+    const f2=t=>new Date(t*1000).toISOString().slice(5,16).replace("T"," "),R=[];let a=miss[0],q=a;
+    for(let i=1;i<=miss.length;i++){const t=miss[i];if(t!==q+60){R.push(f2(a)+(q>a?" → "+f2(q):""));a=t}q=t}
+    add("Phút M1 thiếu footprint",miss.length+" phút: "+R.slice(0,5).join(" | ")+(R.length>5?" …":""),"warn");
+  }
   $("test").innerHTML=L.join("");
   const lt=ks.filter(t=>fpm.get(t)).pop();
   $("raw").textContent=lt?`Mẫu phút ${hm(lt)}  [giá, mua, bán]\n`+JSON.stringify(fpm.get(lt)).slice(0,900):"Chưa có mẫu footprint";
@@ -177,6 +220,7 @@ function draw(){
     const px=lastPx||last.c;if(Math.abs(px-cp)/tick*rh>PH*.4)cp=px;
   }
   sx=Math.max(-PW*.5,Math.min(sx,cands.length*cw+MX*2-PW*.3));
+  if(sx<PW*.3&&!noMore&&!loadingOld)loadOlder();
   const Y=p=>PH/2-(p-cp)/tick*rh;
   // lưới giá
   let step=1;const need=Math.ceil(30/rh);for(const s of [1,2,5,10,20,50,100,200,500]){step=s;if(s>=need)break}
@@ -201,7 +245,12 @@ function draw(){
     const xc=x0+bw+5,cwid=cw-bw-9,hw=cwid/2;
     for(let q=c.lo;q<=c.hi;q++){
       const y=Y(q*tick);if(y<-rh||y>PH+rh)continue;
-      const e=c.lv.get(q);if(!e)continue;
+      const e=c.lv.get(q);
+      if(!e){
+        if(c.buy+c.sell>0){ctx.fillStyle="rgba(255,255,255,.035)";ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
+          if(txt){ctx.fillStyle="#4a4a5e";ctx.font=fs+"px "+MONO;ctx.textAlign="center";ctx.fillText("–",xc+hw,y+1)}}
+        continue;
+      }
       const s=e[0],b=e[1],t=s+b,a=.1+.5*t/c.mx;
       ctx.fillStyle=b>=s?`rgba(0,255,215,${a*.55})`:`rgba(255,76,76,${a*.55})`;
       ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
