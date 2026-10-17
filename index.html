@@ -18,7 +18,7 @@ h1{font-size:16px;margin:0 0 8px;display:flex;justify-content:space-between;alig
 .bar label{font-size:12px;color:var(--mute)}
 input,button,select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);min-width:0}
 button{cursor:pointer}button.on{background:var(--gold);color:#111;border-color:var(--gold)}
-#sym{width:90px}#tick,#ratio{width:62px}
+#sym{width:90px}#tick,#ratio,#bigk,#bigv{width:62px}
 details{margin-top:8px}summary{cursor:pointer;color:var(--mute);font-size:13px}
 details input{width:100%;margin-top:6px}
 #info{padding:6px 10px;font-size:12.5px;color:var(--mute);border-bottom:1px solid var(--line);min-height:30px}
@@ -40,6 +40,9 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
       <label>Khung <select id="tf"><option value="1">M1</option><option value="2">M2</option><option value="3">M3</option><option value="5">M5</option><option value="15">M15</option></select></label>
       <label>Bước giá <input id="tick" type="number" step="0.01" min="0.01"></label>
       <label>Imbalance ≥ <input id="ratio" type="number" step="0.5" min="1.5"></label>
+      <label><input type="checkbox" id="big" checked style="padding:0"> Big trade</label>
+      <label>×TB <input id="bigk" type="number" step="0.5" min="1.5"></label>
+      <label>Vol ≥ <input id="bigv" type="number" step="1" min="1"></label>
       <label>Tải <select id="hrs"><option value="4">4 giờ</option><option value="8">8 giờ</option><option value="24">24 giờ</option><option value="48">48 giờ</option></select></label>
       <button id="zo" aria-label="Thu nhỏ">&minus;</button><button id="zi" aria-label="Phóng to">+</button><button id="live" class="on">Live</button>
     </div>
@@ -51,7 +54,7 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div id="info"></div><div id="cv"><canvas id="c"></canvas></div>
-    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
+    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Bong bóng = Big trade: mức giá có volume mua (cyan, nửa phải) hoặc bán (đỏ, nửa trái) nhô cao bất thường rồi giảm dần ở các mức kề. Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
     Lưu ý: XAUUSD CFD không có giao dịch thật, mua/bán được suy ra từ tick (tick-rule) nên đây là dữ liệu ước lượng, không phải orderflow thật như Binance/CME.</div>
   </div>
 </div>
@@ -59,13 +62,13 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
 const $=id=>document.getElementById(id);
 const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||"{}")}catch(e){return{}}};
 let cfg=rd("sb_cfg"),P=rd("fp_prefs");               // sb_cfg dùng chung với trang TPO / Signal Bridge nếu cùng domain
-let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3;
+let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,bigK=P.bigK||3,bigV=P.bigV||15;
 const m1=new Map(),fpm=new Map();                     // phút -> nến M1 [t,o,h,l,c,v] ; phút -> [[giá,mua,bán],...]
 let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr="",qInfo={},follow=true,loadingOld=false,noMore=false,gen=0;
 let cw=96,rh=15,sx=0,cp=null,ch=null;
 const AX=62,BH=62,MX=40,MONO="Consolas,ui-monospace,Menlo,monospace";
 const cv=$("c"),ctx=cv.getContext("2d");let W=0,H=0;
-const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio}))}catch(e){}};
+const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bigK,bigV}))}catch(e){}};
 const dec=()=>Number.isInteger(tick)?0:Math.min(4,(String(tick).split(".")[1]||"").length);
 const fx=(v,d=2)=>v==null?"–":Number(v).toFixed(d);
 const fv=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e4?(v/1e3).toFixed(1)+"K":Math.round(v)+"";
@@ -182,6 +185,26 @@ function report(){
   $("raw").textContent=lt?`Mẫu phút ${hm(lt)}  [giá, mua, bán]\n`+JSON.stringify(fpm.get(lt)).slice(0,900):"Chưa có mẫu footprint";
 }
 
+// ---------- Big trade: mức giá có volume nhô cao bất thường, hai bên giảm dần (cực trị cục bộ) ----------
+// Xét riêng phía MUA và phía BÁN trong từng nến:
+//  - v >= max(Vol tối thiểu x khung, k x trung vị volume các mức có giao dịch của nến)
+//  - v lớn hơn hẳn 2 mức kề, và không nhỏ hơn mức cách 2 bậc  => đỉnh nhô lên rồi giảm dần
+function findBig(c){
+  const out=[];if(!bigOn)return out;
+  for(const side of [1,0]){                       // chỉ số 1 = mua, 0 = bán
+    const vs=[];for(const e of c.lv.values())if(e[side]>0)vs.push(e[side]);
+    if(vs.length<4)continue;
+    vs.sort((a,b)=>a-b);
+    const thr=Math.max(bigV*tf,bigK*vs[vs.length>>1]);
+    const g=q=>{const e=c.lv.get(q);return e?e[side]:0};
+    for(let q=c.lo;q<=c.hi;q++){
+      const v=g(q);if(v<thr)continue;
+      if(v>g(q-1)&&v>g(q+1)&&v>=g(q-2)&&v>=g(q+2))out.push({q,side:side?1:-1,v,thr});
+    }
+  }
+  return out;
+}
+
 // ---------- dựng nến footprint ----------
 function build(){
   const step=tf*60,C=new Map();
@@ -199,7 +222,7 @@ function build(){
   for(const c of cands){
     let lo=Math.round(c.l/tick),hi=Math.round(c.h/tick),mx=1,poc=null,pm=-1;
     for(const [q,e] of c.lv){lo=Math.min(lo,q);hi=Math.max(hi,q);const s=e[0]+e[1];if(s>mx)mx=s;if(s>pm){pm=s;poc=q}}
-    c.lo=lo;c.hi=hi;c.mx=mx;c.poc=poc;c.delta=c.buy-c.sell;
+    c.lo=lo;c.hi=hi;c.mx=mx;c.poc=poc;c.delta=c.buy-c.sell;c.big=findBig(c);
   }
   cver=ver;
 }
@@ -264,6 +287,13 @@ function draw(){
       ctx.font=fs+"px "+MONO;ctx.textAlign="left";ctx.fillStyle=bi?"#2effe0":"#b4b4c4";if(bi)ctx.font="bold "+fs+"px "+MONO;
       ctx.fillText(b>0?fv(b):"",xc+hw+3,y+1);
     }
+    if(bigOn&&c.big)for(const g of c.big){
+      const y=Y(g.q*tick);if(y<-rh*2||y>PH+rh*2)continue;
+      const bx=xc+(g.side>0?hw*1.5:hw*.5),r=Math.max(3,Math.min(rh*1.6,hw*.5,4+3*Math.sqrt(g.v/g.thr))),col=g.side>0?"0,255,215":"255,76,76";
+      ctx.fillStyle=`rgba(${col},.35)`;ctx.strokeStyle=`rgb(${col})`;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(bx,y,r,0,7);ctx.fill();ctx.stroke();ctx.lineWidth=1;
+      if(r>=8){ctx.fillStyle="#fff";ctx.font="bold "+Math.min(10,r*.9)+"px "+MONO;ctx.textAlign="center";ctx.fillText(fv(g.v),bx,y+1)}
+    }
   });
   const px=lastPx||last.c,py=Y(px);
   ctx.strokeStyle="#ffd700";ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(PW,py);ctx.stroke();ctx.setLineDash([]);
@@ -288,7 +318,7 @@ function draw(){
     ctx.fillStyle="#fff";ctx.textAlign="left";ctx.font="11px system-ui";ctx.fillText(fx(cp+(PH/2-cy)/rh*tick,dc),PW+4,cy);
   }
   const f=focus||last;
-  $("info").textContent=`${new Date(f.t*1000).toISOString().slice(0,16).replace("T"," ")} · O ${fx(f.o)} H ${fx(f.h)} L ${fx(f.l)} C ${fx(f.c)} · Mua ${fv(f.buy)} Bán ${fv(f.sell)} Delta ${f.delta>0?"+":""}${fv(f.delta)} · POC ${f.poc!=null?fx(f.poc*tick):"–"}${f.buy+f.sell===0?" (chưa có dữ liệu footprint)":""}`;
+  $("info").textContent=`${new Date(f.t*1000).toISOString().slice(0,16).replace("T"," ")} · O ${fx(f.o)} H ${fx(f.h)} L ${fx(f.l)} C ${fx(f.c)} · Mua ${fv(f.buy)} Bán ${fv(f.sell)} Delta ${f.delta>0?"+":""}${fv(f.delta)} · Big mua ${f.big.filter(x=>x.side>0).length} / bán ${f.big.filter(x=>x.side<0).length} · POC ${f.poc!=null?fx(f.poc*tick):"–"}${f.buy+f.sell===0?" (chưa có dữ liệu footprint)":""}`;
 }
 let raf=0;const redraw=()=>{raf||(raf=requestAnimationFrame(()=>{raf=0;draw()}))};
 function size(){const r=$("cv").getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height-BH;cv.width=W*d;cv.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);redraw()}
@@ -334,6 +364,10 @@ $("sym").onchange=()=>{sym=$("sym").value.trim()||"XAUUSD";$("ttl").textContent=
 $("tf").onchange=()=>{tf=Number($("tf").value);savePrefs();ver++;redraw()};
 $("tick").onchange=()=>{const v=Number($("tick").value);if(v>0){tick=v;savePrefs();cp=lastPx;ver++;redraw()}};
 $("ratio").onchange=()=>{const v=Number($("ratio").value);if(v>=1.5){ratio=v;savePrefs();redraw()}};
+$("big").checked=bigOn;$("bigk").value=bigK;$("bigv").value=bigV;
+$("big").onchange=()=>{bigOn=$("big").checked;savePrefs();ver++;redraw()};
+$("bigk").onchange=()=>{const v=Number($("bigk").value);if(v>=1.5){bigK=v;savePrefs();ver++;redraw()}};
+$("bigv").onchange=()=>{const v=Number($("bigv").value);if(v>=1){bigV=v;savePrefs();ver++;redraw()}};
 $("hrs").onchange=()=>{hrs=Number($("hrs").value);savePrefs();start()};
 setInterval(tickLoop,1000);
 setInterval(()=>{if(cfg.apiUrl&&!document.hidden)loadData(Date.now()-lastFull>300000).catch(()=>{})},30000);
