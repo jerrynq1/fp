@@ -29,6 +29,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor
 #test div{display:flex;gap:8px}#test b{min-width:190px;font-weight:400;color:var(--mute)}
 .ok{color:var(--buy)}.warn{color:var(--gold)}.err{color:var(--sell)}
 pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px;max-height:110px;overflow:auto;font-size:11.5px;white-space:pre-wrap;word-break:break-all}
+.bt{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-top:8px}.bt b{min-width:84px;font-weight:600;color:var(--mute)}.bt label{display:flex;align-items:center;gap:4px}
+.bt input[type=number]{width:62px;margin:0}.bt input[type=checkbox]{width:auto;margin:0}.bt input[type=color]{width:36px;height:26px;padding:0;margin:0}
 </style>
 </head>
 <body>
@@ -41,10 +43,10 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
       <label>Bước giá <input id="tick" type="number" step="0.01" min="0.01"></label>
       <label>Imbalance ≥ <input id="ratio" type="number" step="0.5" min="1.5"></label>
       <label><input type="checkbox" id="big" checked style="padding:0"> Big trade</label>
-      <label>×TB <input id="bigk" type="number" step="0.5" min="1.5"></label>
-      <label>Vol ≥ <input id="bigv" type="number" step="1" min="1"></label>
+      
+      
       <label>Kiểu <select id="view"><option value="auto">Tự động</option><option value="fp">Footprint</option><option value="bub">Bubble</option></select></label>
-      <label>Cỡ bóng <input id="bsz" type="number" step="2" min="8" max="80"></label>
+      
       <label>Tải <select id="hrs"><option value="4">4 giờ</option><option value="8">8 giờ</option><option value="24">24 giờ</option><option value="48">48 giờ</option></select></label>
       <button id="zo" aria-label="Thu nhỏ">&minus;</button><button id="zi" aria-label="Phóng to">+</button><button id="live" class="on">Live</button>
     </div>
@@ -52,11 +54,32 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
       <input id="apiUrl" placeholder="https://signal-bridge.xxx.workers.dev"><input id="token" type="password" placeholder="Secret token">
       <button id="save" style="margin-top:6px">Lưu</button>
     </details>
+    <details id="btBox"><summary>Big Trades (cài đặt)</summary>
+      <div class="bt"><b>Lọc</b>
+        <label>Chế độ <select id="btFm"><option value="auto">Tự động</option><option value="man">Thủ công</option></select></label>
+        <label id="btLvW">Cường độ <select id="btLv"><option value="low">Thấp</option><option value="med">Vừa</option><option value="str">Mạnh</option></select></label>
+        <span id="btManW" class="bt" style="margin:0"><label>Min <input id="btMn" type="number" min="1" step="1"></label><label>Max (0 = không giới hạn) <input id="btMx" type="number" min="0" step="1"></label></span>
+        <span id="btTh" style="color:var(--mute)"></span></div>
+      <div class="bt"><b>Marker</b>
+        <label><input type="checkbox" id="btHol"> Rỗng ruột</label>
+        <label>Cỡ nhỏ nhất <input id="btSmin" type="number" min="2" step="1"></label><label>Cỡ lớn nhất <input id="btSmax" type="number" min="4" step="1"></label>
+        <label>Độ lệch chuẩn <input id="btSdk" type="number" min="0.5" step="0.5"></label>
+        <label>Độ mờ nhỏ nhất <input id="btOmin" type="number" min="0.05" max="1" step="0.05"></label><label>lớn nhất <input id="btOmax" type="number" min="0.05" max="1" step="0.05"></label>
+        <label>Màu Mua (Ask) <input type="color" id="btAsk"></label><label>Màu Bán (Bid) <input type="color" id="btBid"></label></div>
+      <div class="bt"><b>Chữ</b>
+        <label><input type="checkbox" id="btTxt"> Hiện số volume</label><label><input type="checkbox" id="btIns"> Chỉ hiện trong thân nến</label>
+        <label>Cỡ chữ <input id="btTsz" type="number" min="7" step="1"></label><label>Màu chữ <input type="color" id="btTcol"></label></div>
+      <div class="bt"><b>Vùng (Zones)</b>
+        <label><input type="checkbox" id="btZon"> Bật</label><label><input type="checkbox" id="btZbig"> Chỉ lệnh lớn nhất mỗi nến</label>
+        <label>Ở râu nến <select id="btZsh"><option value="all">Tất cả</option><option value="rev">Đảo chiều</option><option value="trend">Theo xu hướng</option><option value="none">Không vẽ</option></select></label>
+        <label>Ở thân nến <select id="btZbo"><option value="all">Tất cả</option><option value="rev">Đảo chiều</option><option value="trend">Theo xu hướng</option><option value="none">Không vẽ</option></select></label>
+        <label>Độ mờ <input id="btZop" type="number" min="0.02" max="1" step="0.02"></label><label>Kéo dài (nến) <input id="btZbar" type="number" min="1" step="1"></label></div>
+    </details>
     <details id="testBox" open><summary>Kiểm tra dữ liệu</summary><div id="test"></div><pre id="raw"></pre></details>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div id="info"></div><div id="cv"><canvas id="c"></canvas></div>
-    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Bong bóng = Big trade: mức giá có volume mua (xanh lá) hoặc bán (tím) nhô cao bất thường rồi giảm dần ở các mức kề, bóng càng to volume càng lớn. Zoom ra thì tự chuyển sang kiểu Bubble (nến + bóng), zoom vào thì hiện lại các ô Bán | Mua; có thể ép kiểu ở ô "Kiểu". Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
+    <div class="lg">Mỗi ô = <b>Bán | Mua</b> tại mức giá đó. Chữ sáng = imbalance chéo (Mua ≥ k × Bán ở giá dưới 1 bước, hoặc Bán ≥ k × Mua ở giá trên 1 bước). Viền vàng = POC của nến. Bong bóng = Big trade (kiểu DeepCharts): volume mua (Ask) hoặc bán (Bid) tại một mức giá trong một phút vượt ngưỡng lọc; bóng càng to và đậm volume càng lớn. Vùng ngang (Zones) kéo dài từ lệnh lớn sang các nến sau. Chỉnh trong mục "Big Trades (cài đặt)". Zoom ra thì tự chuyển sang kiểu Bubble (nến + bóng), zoom vào thì hiện lại các ô Bán | Mua; có thể ép kiểu ở ô "Kiểu". Hàng dưới: Delta và Volume (tick). Kéo để cuộn, lăn chuột để zoom, kéo trên thang giá/thang giờ để zoom riêng từng chiều, nhấp đúp để về Live. Giờ hiển thị là giờ server MT5.
     Lưu ý: XAUUSD CFD không có giao dịch thật, mua/bán được suy ra từ tick (tick-rule) nên đây là dữ liệu ước lượng, không phải orderflow thật như Binance/CME.</div>
   </div>
 </div>
@@ -64,14 +87,15 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
 const $=id=>document.getElementById(id);
 const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||"{}")}catch(e){return{}}};
 let cfg=rd("sb_cfg"),P=rd("fp_prefs");               // sb_cfg dùng chung với trang TPO / Signal Bridge nếu cùng domain
-let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,bigK=P.bigK||3,bigV=P.bigV||15,viewMode=P.view||"auto",bsz=P.bsz||26,bigRef=1;
+let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,viewMode=P.view||"auto",btStat={mean:0,sd:0,min:0},autoKey="",autoTh=0;
+const BT=Object.assign({fm:"auto",lv:"med",mn:15,mx:0,hol:false,txt:true,ins:false,tsz:11,tcol:"#ffffff",sdk:1,smin:8,smax:34,omin:.25,omax:.85,ask:"#26c882",bid:"#ba32c4",zon:false,zbig:true,zsh:"all",zbo:"all",zop:.16,zbar:20},P.bt||{});
 const BUY="38,200,130",SELL="186,50,196",CU="#1fc21f",CD="#5b2f91",CDL="#9162d6",TB="#63f0a8",TS="#e58cf2";
 const m1=new Map(),fpm=new Map();                     // phút -> nến M1 [t,o,h,l,c,v] ; phút -> [[giá,mua,bán],...]
 let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr="",qInfo={},follow=true,loadingOld=false,noMore=false,gen=0;
 let cw=96,rh=15,sx=0,cp=null,ch=null;
 const AX=62,BH=62,MX=40,MONO="Consolas,ui-monospace,Menlo,monospace";
 const cv=$("c"),ctx=cv.getContext("2d");let W=0,H=0;
-const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bigK,bigV,view:viewMode,bsz}))}catch(e){}};
+const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bt:BT,view:viewMode}))}catch(e){}};
 const dec=()=>Number.isInteger(tick)?0:Math.min(4,(String(tick).split(".")[1]||"").length);
 const fx=(v,d=2)=>v==null?"–":Number(v).toFixed(d);
 const fv=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e4?(v/1e3).toFixed(1)+"K":Math.round(v)+"";
@@ -210,7 +234,7 @@ function findBig(c){
 
 // ---------- dựng nến footprint ----------
 function build(){
-  const step=tf*60,C=new Map();
+  const step=tf*60,C=new Map(),rawM=new Map();
   for(const t of [...m1.keys()].sort((a,b)=>a-b)){
     const b=m1.get(t),k=Math.floor(t/step)*step;let c=C.get(k);
     if(!c){c={t:k,o:b[1],h:b[2],l:b[3],c:b[4],lv:new Map(),buy:0,sell:0,v:0};C.set(k,c)}
@@ -218,20 +242,95 @@ function build(){
     const r=fpm.get(t);if(!r)continue;
     for(const [p,bu,se] of r){
       const q=Math.round(p/tick);let e=c.lv.get(q);if(!e){e=[0,0];c.lv.set(q,e)}
-      e[0]+=se;e[1]+=bu;c.buy+=bu;c.sell+=se;
+      e[0]+=se;e[1]+=bu;c.buy+=bu;c.sell+=se;const kk=t+"|"+q;let rm=rawM.get(kk);if(!rm){rm={c,t,q,s:0,b:0};rawM.set(kk,rm)}rm.s+=se;rm.b+=bu;
     }
   }
   cands=[...C.values()].sort((a,b)=>a.t-b.t);
   for(const c of cands){
     let lo=Math.round(c.l/tick),hi=Math.round(c.h/tick),mx=1,poc=null,pm=-1;
     for(const [q,e] of c.lv){lo=Math.min(lo,q);hi=Math.max(hi,q);const s=e[0]+e[1];if(s>mx)mx=s;if(s>pm){pm=s;poc=q}}
-    c.lo=lo;c.hi=hi;c.mx=mx;c.poc=poc;c.delta=c.buy-c.sell;c.big=findBig(c);
+    c.lo=lo;c.hi=hi;c.mx=mx;c.poc=poc;c.delta=c.buy-c.sell;c.big=[];
   }
-  const all=[];for(const c of cands)for(const g of c.big)all.push(g.v);
-  all.sort((a,b)=>a-b);bigRef=all.length?Math.max(1,all[Math.floor(all.length*.9)]):1;   // bóng có volume ~ phân vị 90 sẽ to cỡ "Cỡ bóng"
+  applyBig([...rawM.values()]);const all=[];
+  all.sort((a,b)=>a-b);   // bóng có volume ~ phân vị 90 sẽ to cỡ "Cỡ bóng"
   cver=ver;
 }
 
+// ---------- Big Trades kiểu DeepCharts ----------
+// 1 "trade" = volume MUA hoặc BÁN tại 1 mức giá trong 1 phút M1 (tick volume), xét ở M1 nên ngưỡng không phụ thuộc khung đang xem.
+// Lọc: Thủ công (Min/Max) hoặc Tự động (ngưỡng theo phân vị của các mức giá đã đóng: Thấp ~P95, Vừa ~P98, Mạnh ~P99.5).
+const rgb=h=>{const m=/^#?([0-9a-f]{6})$/i.exec(h||"");const n=m?parseInt(m[1],16):0;return(n>>16)+","+((n>>8)&255)+","+(n&255)};
+function applyBig(raw){
+  btStat={mean:0,sd:0,min:0};$("btTh").textContent="";
+  if(!bigOn)return;
+  let lo,hi=Infinity;
+  if(BT.fm==="man"){lo=Math.max(1,BT.mn);if(BT.mx>0)hi=BT.mx}
+  else{
+    const nm=fpm.size-(fpm.has(liveT)?1:0),key=[sym,tick,BT.lv,nm].join("|");
+    if(key!==autoKey){
+      autoKey=key;const vs=[];
+      for(const x of raw){if(x.t===liveT)continue;if(x.s>0)vs.push(x.s);if(x.b>0)vs.push(x.b)}
+      vs.sort((a,b)=>a-b);
+      const p=({low:.95,med:.98,str:.995})[BT.lv]||.98;
+      autoTh=vs.length<50?Math.max(2,BT.mn):Math.max(2,vs[Math.min(vs.length-1,Math.floor(vs.length*p))]);
+    }
+    lo=autoTh;
+  }
+  const all=[];
+  for(const x of raw){
+    const c=x.c;
+    if(x.b>=lo&&x.b<=hi){c.big.push({q:x.q,side:1,v:x.b,t:x.t});all.push(x.b)}
+    if(x.s>=lo&&x.s<=hi){c.big.push({q:x.q,side:-1,v:x.s,t:x.t});all.push(x.s)}
+  }
+  for(const c of cands)c.big.sort((a,b)=>b.v-a.v);
+  if(all.length){
+    let m=0,mn=Infinity;for(const v of all){m+=v;if(v<mn)mn=v}m/=all.length;
+    let q=0;for(const v of all)q+=(v-m)*(v-m);
+    btStat={mean:m,sd:Math.sqrt(q/all.length),min:mn};
+  }
+  $("btTh").textContent="Ngưỡng hiện tại: ≥ "+fv(lo)+(hi<Infinity?" và ≤ "+fv(hi):"")+" · "+all.length+" lệnh lớn";
+}
+// Marker tròn: kích thước và độ mờ co giãn từ min→max theo volume, volume = trung bình + k×độ lệch chuẩn là to nhất
+function drawBig(vis,Y,PH,mode){
+  const colA=rgb(BT.ask),colB=rgb(BT.bid),smax=Math.max(BT.smax,BT.smin),den=btStat.mean+BT.sdk*btStat.sd-btStat.min;
+  vis.sort((a,b)=>b.g.v-a.g.v);                                    // to vẽ trước, nhỏ vẽ đè lên
+  for(const o of vis){
+    const g=o.g,y=Y(g.q*tick);if(y<-100||y>PH+100)continue;
+    const t=den>1e-6?Math.max(0,Math.min(1,(g.v-btStat.min)/den)):.5;
+    let r=(BT.smin+(smax-BT.smin)*t)/2;
+    if(mode)r=Math.min(r,Math.max(o.w*.6,rh*1.6));
+    const al=Math.max(0,Math.min(1,BT.omin+(BT.omax-BT.omin)*t)),col=g.side>0?colA:colB;
+    ctx.lineWidth=1.2;ctx.strokeStyle=`rgba(${col},${Math.min(1,al+.3)})`;
+    ctx.beginPath();ctx.arc(o.x,y,r,0,7);
+    if(!BT.hol){ctx.fillStyle=`rgba(${col},${al})`;ctx.fill()}
+    ctx.stroke();
+    if(BT.txt&&(!BT.ins||(y>=o.yb0&&y<=o.yb1))){ctx.fillStyle=BT.tcol;ctx.font="bold "+BT.tsz+"px "+MONO;ctx.textAlign="center";ctx.fillText(fv(g.v),o.x,y+1)}
+  }
+  ctx.lineWidth=1;
+}
+// Vùng ngang kéo dài N nến từ lệnh lớn. Râu/Thân: Tất cả | Đảo chiều (nến giảm -> mua, nến tăng -> bán) | Theo xu hướng (ngược lại) | Không vẽ
+function drawZones(Y,PW,PH){
+  if(!bigOn||!BT.zon)return;
+  const N=Math.max(1,Math.round(BT.zbar)),h=Math.max(2,rh);
+  ctx.save();ctx.beginPath();ctx.rect(0,0,PW,PH);ctx.clip();
+  cands.forEach((c,i)=>{
+    if(!c.big.length)return;
+    const x0=i*cw-sx+cw/2,x1=x0+N*cw;if(x1<0||x0>PW)return;
+    const bull=c.c>=c.o,bh=Math.max(c.o,c.c),bl=Math.min(c.o,c.c);
+    let L=c.big.filter(g=>{
+      const p=g.q*tick,m=(p>bh+tick/2||p<bl-tick/2)?BT.zsh:BT.zbo;
+      if(m==="none")return false;if(m==="all")return true;
+      return m==="rev"?(bull?g.side<0:g.side>0):(bull?g.side>0:g.side<0);
+    });
+    if(BT.zbig&&L.length)L=[L[0]];                                  // c.big đã sắp xếp giảm dần theo volume
+    for(const g of L){
+      const y=Y(g.q*tick),col=g.side>0?rgb(BT.ask):rgb(BT.bid);
+      ctx.fillStyle=`rgba(${col},${BT.zop})`;ctx.fillRect(x0,y-h/2,x1-x0,h);
+      ctx.strokeStyle=`rgba(${col},${Math.min(1,BT.zop+.35)})`;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+    }
+  });
+  ctx.restore();
+}
 // ---------- vẽ ----------
 function draw(){
   if(!W)return;
@@ -261,6 +360,7 @@ function draw(){
   // Kiểu hiển thị: footprint (zoom vào, có ô Bán | Mua) hoặc bubble (zoom ra, nến + bóng bao trùm)
   const mode=viewMode==="fp"?1:viewMode==="bub"?0:(cw>=58&&rh>=9?1:0);
   const txt=mode&&rh>=9&&cw>=58,fs=Math.min(rh-2,11.5),bw=Math.max(3,Math.min(8,cw*.1));
+  drawZones(Y,PW,PH);
   let focus=null;const mid=sx+PW/2,hoverX=ch?sx+ch[0]:null,vis=[];
   ctx.save();ctx.beginPath();ctx.rect(0,0,PW,PH);ctx.clip();
   cands.forEach((c,i)=>{
@@ -302,10 +402,10 @@ function draw(){
       if(!up&&bwid>=4&&bh>=3){ctx.strokeStyle=CDL;ctx.strokeRect(cxm-bwid/2+.5,yt+.5,bwid-1,bh-1)}
       xc=x0+3;cwid=cw-6;
     }
-    if(bigOn&&c.big)for(const g of c.big)vis.push({g,x:xc+cwid/2,w:cwid});
+    if(bigOn&&c.big)for(const g of c.big)vis.push({g,x:xc+cwid/2,w:cwid,yb0:Math.min(yo,yc),yb1:Math.max(yo,yc)});
   });
   // Bong bóng Big trade: cỡ theo volume (diện tích ~ volume), bóng to vẽ trước để bóng nhỏ không bị che
-  vis.sort((a,b)=>b.g.v-a.g.v);
+  drawBig(vis,Y,PH,mode);vis.length=0;
   for(const o of vis){
     const g=o.g,y=Y(g.q*tick);if(y<-100||y>PH+100)continue;
     let r=Math.max(4,Math.min(bsz*1.5,bsz*.85*Math.sqrt(g.v/bigRef)));
@@ -389,14 +489,19 @@ $("sym").onchange=()=>{sym=$("sym").value.trim()||"XAUUSD";$("ttl").textContent=
 $("tf").onchange=()=>{tf=Number($("tf").value);savePrefs();ver++;redraw()};
 $("tick").onchange=()=>{const v=Number($("tick").value);if(v>0){tick=v;savePrefs();cp=lastPx;ver++;redraw()}};
 $("ratio").onchange=()=>{const v=Number($("ratio").value);if(v>=1.5){ratio=v;savePrefs();redraw()}};
-$("big").checked=bigOn;$("bigk").value=bigK;$("bigv").value=bigV;
+$("big").checked=bigOn;
 $("big").onchange=()=>{bigOn=$("big").checked;savePrefs();ver++;redraw()};
-$("bigk").onchange=()=>{const v=Number($("bigk").value);if(v>=1.5){bigK=v;savePrefs();ver++;redraw()}};
-$("bigv").onchange=()=>{const v=Number($("bigv").value);if(v>=1){bigV=v;savePrefs();ver++;redraw()}};
-$("view").value=viewMode;$("bsz").value=bsz;
+
+
+$("view").value=viewMode;
 $("view").onchange=()=>{viewMode=$("view").value;savePrefs();redraw()};
-$("bsz").onchange=()=>{const v=Number($("bsz").value);if(v>=8){bsz=v;savePrefs();redraw()}};
+
 $("hrs").onchange=()=>{hrs=Number($("hrs").value);savePrefs();start()};
+const BTF=[["btFm","fm","s"],["btLv","lv","s"],["btMn","mn","n"],["btMx","mx","n"],["btHol","hol","b"],["btSmin","smin","n"],["btSmax","smax","n"],["btSdk","sdk","n"],["btOmin","omin","n"],["btOmax","omax","n"],["btAsk","ask","c"],["btBid","bid","c"],["btTxt","txt","b"],["btIns","ins","b"],["btTsz","tsz","n"],["btTcol","tcol","c"],["btZon","zon","b"],["btZbig","zbig","b"],["btZsh","zsh","s"],["btZbo","zbo","s"],["btZop","zop","n"],["btZbar","zbar","n"]];
+const btVis=()=>{const a=BT.fm==="auto";$("btLvW").style.display=a?"":"none";$("btManW").style.display=a?"none":""};
+BTF.forEach(([id,k,t])=>{const el=$(id);if(t==="b")el.checked=!!BT[k];else el.value=BT[k];
+  el.addEventListener(t==="c"?"input":"change",()=>{const v=t==="b"?el.checked:t==="n"?Number(el.value):el.value;if(t==="n"&&!isFinite(v))return;BT[k]=v;btVis();savePrefs();ver++;redraw()})});
+btVis();
 setInterval(tickLoop,1000);
 setInterval(()=>{if(cfg.apiUrl&&!document.hidden)loadData(Date.now()-lastFull>300000).catch(()=>{})},30000);
 setInterval(report,5000);
