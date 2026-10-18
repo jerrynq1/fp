@@ -54,6 +54,25 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
       <input id="apiUrl" placeholder="https://signal-bridge.xxx.workers.dev"><input id="token" type="password" placeholder="Secret token">
       <button id="save" style="margin-top:6px">Lưu</button>
     </details>
+    <details id="fpBox"><summary>Deep Print (cài đặt Footprint)</summary>
+      <div class="bt"><b>Dữ liệu</b>
+        <label>Kiểu <select id="fpTy"><option value="vol">Volume</option><option value="ab">Ask / Bid</option><option value="dl">Delta</option><option value="dv">Delta + Volume</option></select></label>
+        <label>Chế độ <select id="fpMd"><option value="box">Box</option><option value="prof">Profile</option></select></label>
+        <label>Định dạng số <select id="fpFmt"><option value="auto">Tự động</option><option value="n">Đầy đủ</option><option value="k">K (nghìn)</option></select></label>
+        <label><input type="checkbox" id="fpZero"> Hiện số 0</label><label><input type="checkbox" id="fpDyn"> Cỡ chữ động</label></div>
+      <div class="bt"><b>Màu nền</b>
+        <label>Chế độ <select id="fpCm"><option value="none">Không</option><option value="fix">Cố định</option><option value="fade">Mờ dần</option></select></label>
+        <label>Tính theo <select id="fpCc"><option value="imb">Imbalance</option><option value="vol">Volume</option><option value="dl">Delta</option><option value="dom">Volume áp đảo</option></select></label>
+        <label>Độ mờ <input id="fpOp" type="number" min="0.1" max="1" step="0.05"></label>
+        <label>Màu Ask (mua) <input type="color" id="fpAsk"></label><label>Màu Bid (bán) <input type="color" id="fpBid"></label>
+        <span style="color:var(--mute)">Ngưỡng Imbalance: ô "Imbalance ≥" ở thanh trên</span></div>
+      <div class="bt"><b>POC</b>
+        <label><input type="checkbox" id="fpPoc"> POC volume</label><label>Màu viền <input type="color" id="fpPocc"></label>
+        <label><input type="checkbox" id="fpDpoc"> POC delta</label></div>
+      <div class="bt"><b>Value Area</b>
+        <label><input type="checkbox" id="fpVa"> Bật</label><label>% <input id="fpVap" type="number" min="10" max="100" step="1"></label>
+        <label><input type="checkbox" id="fpVaout"> Làm mờ ngoài vùng</label><label><input type="checkbox" id="fpValn"> Đường VAH/VAL</label></div>
+    </details>
     <details id="btBox"><summary>Big Trades (cài đặt)</summary>
       <div class="bt"><b>Lọc</b>
         <label>Chế độ <select id="btFm"><option value="auto">Tự động</option><option value="man">Thủ công</option></select></label>
@@ -88,6 +107,7 @@ const $=id=>document.getElementById(id);
 const rd=k=>{try{return JSON.parse(localStorage.getItem(k)||"{}")}catch(e){return{}}};
 let cfg=rd("sb_cfg"),P=rd("fp_prefs");               // sb_cfg dùng chung với trang TPO / Signal Bridge nếu cùng domain
 let sym=P.sym||"XAUUSD",tf=P.tf||1,tick=P.tick||0.5,hrs=P.hrs||8,ratio=P.ratio||3,bigOn=P.bigOn!==false,viewMode=P.view||"auto",btStat={mean:0,sd:0,min:0},autoKey="",autoTh=0;
+const FPS=Object.assign({ty:"ab",md:"box",cm:"fade",cc:"imb",op:.6,ask:"#26c882",bid:"#ba32c4",fmt:"auto",zero:false,dyn:false,poc:true,pocc:"#ffd700",dpoc:false,va:false,vap:70,vaout:true,valn:true},P.fps||{});
 const BT=Object.assign({fm:"auto",lv:"med",mn:15,mx:0,hol:false,txt:true,ins:false,tsz:11,tcol:"#ffffff",sdk:1,smin:8,smax:34,omin:.25,omax:.85,ask:"#26c882",bid:"#ba32c4",zon:false,zbig:true,zsh:"all",zbo:"all",zop:.16,zbar:20},P.bt||{});
 const BUY="38,200,130",SELL="186,50,196",CU="#1fc21f",CD="#5b2f91",CDL="#9162d6",TB="#63f0a8",TS="#e58cf2";
 const m1=new Map(),fpm=new Map();                     // phút -> nến M1 [t,o,h,l,c,v] ; phút -> [[giá,mua,bán],...]
@@ -95,7 +115,7 @@ let srv=0,lastPx=null,liveT=0,ver=0,cver=-1,cands=[],busy=false,lastFull=0,fpErr
 let cw=96,rh=15,sx=0,cp=null,ch=null;
 const AX=62,BH=62,MX=40,MONO="Consolas,ui-monospace,Menlo,monospace";
 const cv=$("c"),ctx=cv.getContext("2d");let W=0,H=0;
-const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bt:BT,view:viewMode}))}catch(e){}};
+const savePrefs=()=>{try{localStorage.setItem("fp_prefs",JSON.stringify({sym,tf,tick,hrs,ratio,bigOn,bt:BT,fps:FPS,view:viewMode}))}catch(e){}};
 const dec=()=>Number.isInteger(tick)?0:Math.min(4,(String(tick).split(".")[1]||"").length);
 const fx=(v,d=2)=>v==null?"–":Number(v).toFixed(d);
 const fv=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e4?(v/1e3).toFixed(1)+"K":Math.round(v)+"";
@@ -256,6 +276,60 @@ function build(){
   cver=ver;
 }
 
+// ---------- Deep Print (Footprint) kiểu DeepCharts ----------
+// Kiểu dữ liệu: Volume / Ask-Bid / Delta / Delta+Volume. Chế độ: Box (ô tô màu) hoặc Profile (thanh histogram).
+// Nền: Không / Cố định / Mờ dần, tính theo Volume / Delta / Imbalance / Volume áp đảo. Bên trái = Bid (bán), bên phải = Ask (mua).
+const fmtV=v=>{const a=Math.abs(v);if(FPS.fmt==="n")return String(Math.round(a));if(FPS.fmt==="k")return a>=1000?(a/1000).toFixed(1)+"K":String(Math.round(a));return fv(a)};
+function fpStat(c){
+  const key=c.buy+"|"+c.sell+"|"+c.lv.size+"|"+FPS.vap;if(c._k===key)return c;
+  let mxs=1,mxd=1,tot=0,dp=null,dm=0;
+  for(const [q,e] of c.lv){const d=Math.abs(e[1]-e[0]);mxs=Math.max(mxs,e[0],e[1]);if(d>mxd)mxd=d;if(d>dm){dm=d;dp=q}tot+=e[0]+e[1]}
+  let lo=c.poc,hi=c.poc;
+  if(c.poc!=null){
+    const g=q=>{const e=c.lv.get(q);return e?e[0]+e[1]:0};let sm=g(c.poc);const tg=tot*FPS.vap/100;
+    while(sm<tg&&(lo>c.lo||hi<c.hi)){const u=hi<c.hi?g(hi+1):-1,d=lo>c.lo?g(lo-1):-1;if(u>=d){hi++;sm+=Math.max(0,u)}else{lo--;sm+=Math.max(0,d)}}
+  }
+  c.mxs=mxs;c.mxd=mxd;c.vl=lo;c.vh=hi;c.dpoc=dp;c._k=key;return c;
+}
+function drawCells(c,xc,cwid,Y,PH,txt,fs){
+  fpStat(c);
+  const hw=cwid/2,A=rgb(FPS.ask),B=rgb(FPS.bid),prof=FPS.md==="prof",two=FPS.ty==="ab",ch_=Math.max(1,rh-1);
+  const ia=(x,imb)=>FPS.cm==="fade"?(FPS.cc==="imb"?(imb?1:.15):.12+.88*Math.min(1,x)):(FPS.cc==="imb"?(imb?1:.3):.8);
+  for(let q=c.lo;q<=c.hi;q++){
+    const y=Y(q*tick);if(y<-rh||y>PH+rh)continue;
+    const e=c.lv.get(q),yt=y-rh/2+.5;
+    if(!e){
+      if(txt&&FPS.zero&&c.buy+c.sell>0){ctx.fillStyle="#4a4a5e";ctx.font=fs+"px "+MONO;ctx.textAlign="center";ctx.fillText("0",xc+hw,y+1)}
+      continue;
+    }
+    const s=e[0],b=e[1],t=s+b,d=b-s,dim=(!FPS.va||(q>=c.vl&&q<=c.vh))?1:(FPS.vaout?.4:1);
+    const dn=c.lv.get(q-1),up_=c.lv.get(q+1),bi=b>0&&b>=ratio*Math.max(dn?dn[0]:0,1),si=s>0&&s>=ratio*Math.max(up_?up_[1]:0,1);
+    if(FPS.cm!=="none"){
+      const rc=(x,w,col,al)=>{if(w<=0)return;ctx.fillStyle=`rgba(${col},${Math.min(1,al*FPS.op*dim)})`;ctx.fillRect(x,yt,w,ch_)};
+      if(two){
+        const ai=ia(b/c.mxs,bi),bj=ia(s/c.mxs,si);
+        if(prof){rc(xc+hw-hw*s/c.mxs,hw*s/c.mxs,B,bj*.9);rc(xc+hw,hw*b/c.mxs,A,ai*.9)}
+        else{rc(xc,hw,B,bj);rc(xc+hw,hw,A,ai)}
+      }else{
+        const k=FPS.ty==="dl"?Math.abs(d)/c.mxd:t/c.mx,a=FPS.cc==="vol"?t/c.mx:FPS.cc==="dl"?Math.abs(d)/c.mxd:FPS.cc==="dom"?Math.max(s,b)/c.mxs:0;
+        const col=FPS.cc==="imb"?(bi&&!si?A:si&&!bi?B:(d>=0?A:B)):FPS.cc==="dl"?(d>=0?A:B):(FPS.ty==="dl"?(d>=0?A:B):(b>=s?A:B));
+        rc(xc,prof?cwid*Math.min(1,k):cwid,col,prof?.9*ia(a,bi||si):ia(a,bi||si));
+      }
+    }
+    if(FPS.poc&&q===c.poc){ctx.strokeStyle=FPS.pocc;ctx.lineWidth=1.5;ctx.strokeRect(xc+.5,yt,cwid-1,ch_);ctx.lineWidth=1}
+    if(FPS.dpoc&&q===c.dpoc){ctx.strokeStyle=d>=0?`rgb(${A})`:`rgb(${B})`;ctx.lineWidth=1.5;ctx.strokeRect(xc+2,yt+1,cwid-4,Math.max(1,ch_-2));ctx.lineWidth=1}
+    if(FPS.va&&FPS.valn&&(q===c.vh||q===c.vl)){ctx.strokeStyle="#35b6ff";ctx.beginPath();const ly=q===c.vh?yt:yt+ch_;ctx.moveTo(xc,ly);ctx.lineTo(xc+cwid,ly);ctx.stroke()}
+    if(!txt)continue;
+    const a2=Math.min(1,Math.max(s,b)/c.mxs),f2=FPS.dyn?Math.min(rh-1,fs*(.85+.5*a2)):fs,sg=v=>(v>0?"+":v<0?"-":"")+fmtV(v);
+    ctx.font=f2+"px "+MONO;ctx.textBaseline="middle";
+    const L=(txtv,x,al,hl,colr)=>{ctx.textAlign=al;ctx.fillStyle=colr;ctx.font=(hl?"bold ":"")+f2+"px "+MONO;ctx.fillText(txtv,x,y+1)};
+    const zs=v=>v>0?fmtV(v):(FPS.zero?"0":"");
+    if(two){L(zs(s),xc+hw-3,"right",si,si?TS:"#b4b4c4");L(zs(b),xc+hw+3,"left",bi,bi?TB:"#b4b4c4")}
+    else if(FPS.ty==="vol")L(fmtV(t),xc+hw,"center",bi||si,"#d6d6e0");
+    else if(FPS.ty==="dl")L(sg(d),xc+hw,"center",bi||si,d>=0?TB:TS);
+    else{L(sg(d),xc+hw-3,"right",false,d>=0?TB:TS);L(fmtV(t),xc+hw+3,"left",false,"#b4b4c4")}
+  }
+}
 // ---------- Big Trades kiểu DeepCharts ----------
 // 1 "trade" = volume MUA hoặc BÁN tại 1 mức giá trong 1 phút M1 (tick volume), xét ở M1 nên ngưỡng không phụ thuộc khung đang xem.
 // Lọc: Thủ công (Min/Max) hoặc Tự động (ngưỡng theo phân vị của các mức giá đã đóng: Thấp ~P95, Vừa ~P98, Mạnh ~P99.5).
@@ -374,27 +448,7 @@ function draw(){
       ctx.strokeStyle=up?CU:CDL;ctx.beginPath();ctx.moveTo(cx,Y(c.h));ctx.lineTo(cx,Y(c.l));ctx.stroke();
       ctx.fillStyle=up?CU:CD;ctx.fillRect(x0+2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yo-yc)));
       xc=x0+bw+5;cwid=cw-bw-9;const hw=cwid/2;
-      for(let q=c.lo;q<=c.hi;q++){
-        const y=Y(q*tick);if(y<-rh||y>PH+rh)continue;
-        const e=c.lv.get(q);
-        if(!e){
-          if(c.buy+c.sell>0){ctx.fillStyle="rgba(255,255,255,.035)";ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
-            if(txt){ctx.fillStyle="#4a4a5e";ctx.font=fs+"px "+MONO;ctx.textAlign="center";ctx.fillText("–",xc+hw,y+1)}}
-          continue;
-        }
-        const s=e[0],b=e[1],t=s+b,a=.1+.5*t/c.mx;
-        ctx.fillStyle=b>=s?`rgba(${BUY},${a*.55})`:`rgba(${SELL},${a*.55})`;
-        ctx.fillRect(xc,y-rh/2+.5,cwid,Math.max(1,rh-1));
-        if(q===c.poc){ctx.strokeStyle="#ffd700";ctx.lineWidth=1.2;ctx.strokeRect(xc+.5,y-rh/2+.5,cwid-1,Math.max(1,rh-1));ctx.lineWidth=1}
-        if(!txt)continue;
-        const dn=c.lv.get(q-1),up_=c.lv.get(q+1);
-        const bi=b>0&&b>=ratio*Math.max(dn?dn[0]:0,1),si=s>0&&s>=ratio*Math.max(up_?up_[1]:0,1);
-        ctx.font=fs+"px "+MONO;
-        ctx.textAlign="right";ctx.fillStyle=si?TS:"#b4b4c4";if(si)ctx.font="bold "+fs+"px "+MONO;
-        ctx.fillText(s>0?fv(s):"",xc+hw-3,y+1);
-        ctx.font=fs+"px "+MONO;ctx.textAlign="left";ctx.fillStyle=bi?TB:"#b4b4c4";if(bi)ctx.font="bold "+fs+"px "+MONO;
-        ctx.fillText(b>0?fv(b):"",xc+hw+3,y+1);
-      }
+      drawCells(c,xc,cwid,Y,PH,txt,fs);
     }else{
       const cxm=x0+cw/2,bwid=Math.max(2,Math.min(16,cw*.55)),yt=Math.min(yo,yc),bh=Math.max(1,Math.abs(yo-yc));
       ctx.strokeStyle=up?CU:CDL;ctx.beginPath();ctx.moveTo(cxm,Y(c.h));ctx.lineTo(cxm,Y(c.l));ctx.stroke();
@@ -502,6 +556,9 @@ const btVis=()=>{const a=BT.fm==="auto";$("btLvW").style.display=a?"":"none";$("
 BTF.forEach(([id,k,t])=>{const el=$(id);if(t==="b")el.checked=!!BT[k];else el.value=BT[k];
   el.addEventListener(t==="c"?"input":"change",()=>{const v=t==="b"?el.checked:t==="n"?Number(el.value):el.value;if(t==="n"&&!isFinite(v))return;BT[k]=v;btVis();savePrefs();ver++;redraw()})});
 btVis();
+const FPF=[["fpTy","ty","s"],["fpMd","md","s"],["fpFmt","fmt","s"],["fpZero","zero","b"],["fpDyn","dyn","b"],["fpCm","cm","s"],["fpCc","cc","s"],["fpOp","op","n"],["fpAsk","ask","c"],["fpBid","bid","c"],["fpPoc","poc","b"],["fpPocc","pocc","c"],["fpDpoc","dpoc","b"],["fpVa","va","b"],["fpVap","vap","n"],["fpVaout","vaout","b"],["fpValn","valn","b"]];
+FPF.forEach(([id,k,t])=>{const el=$(id);if(t==="b")el.checked=!!FPS[k];else el.value=FPS[k];
+  el.addEventListener(t==="c"?"input":"change",()=>{const v=t==="b"?el.checked:t==="n"?Number(el.value):el.value;if(t==="n"&&!isFinite(v))return;FPS[k]=v;savePrefs();ver++;redraw()})});
 setInterval(tickLoop,1000);
 setInterval(()=>{if(cfg.apiUrl&&!document.hidden)loadData(Date.now()-lastFull>300000).catch(()=>{})},30000);
 setInterval(report,5000);
